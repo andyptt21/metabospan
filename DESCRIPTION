@@ -1,0 +1,36 @@
+Package: metabospan
+Title: MetaboSPAN: Improving Interpretation of Metabolite Data Using Annotation Networks 
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Andrew",
+           family = "Patt",
+           role = c("aut","cre"),
+           email = "andrew.patt@mail.nih.gov",
+           comment = c(ORCID = "0000-0002-6373-9545"))
+Description: MetaboSPAN is a network method for pathway/chemical enrichment analysis of a list of metabolites/lipids of interest that tests the chemical space captured in an experiment, rather than a specific list of metabolites. In our method, metabolites/lipids that share pathway annotations with the set of interest are overlaid on a knowledge graph built from shared annotations in the RaMP 2.0 database. Relevant subnetworks are extracted based on graph topology analysis for enrichment analysis using the Fisher’s exact test.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Imports:
+	dplyr,
+	diffusr,
+	igraph,
+	network,
+	RaMP,
+	stats,
+	magrittr,
+	graphics,
+	RColorBrewer,
+	colorspace,
+	DBI,
+	rlang
+Suggests: 
+    rmarkdown,
+    knitr,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+Depends: 
+    R (>= 2.10)

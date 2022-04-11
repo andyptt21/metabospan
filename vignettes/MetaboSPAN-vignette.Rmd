@@ -1,0 +1,222 @@
+---
+title: "MetaboSPAN-vignette"
+author: "Andrew Patt"
+output: pdf_document
+vignette: >
+  %\VignetteIndexEntry{MetaboSPAN-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Introduction
+
+MetaboSPAN is being run on a pathway network based on RaMP2. Relevant
+stats about the analysis are listed in the table below.
+
+
+```{r, eval=FALSE, echo = FALSE}
+library(devtools)
+load_all("~/RaMP-DB")
+load_all("~/metabospan")
+```
+
+```{r, r setup}
+library(metabospan)
+library(RaMP)
+library(magrittr)
+library(dplyr)
+
+pkg.globals <- setConnectionToRaMP(dbname="ramp2",username="root",conpass="mysql123",
+                                   host = "localhost",socket = paste0("/lscratch/",
+                       Sys.getenv("SLURM_JOB_ID"),
+                       "/mysql/mysql.sock"))
+
+## Parameters for MetaboSPAN
+metabs_of_interest_cutoff=5
+background_cutoff=5
+
+load("../data/example_metabolites.rda")
+
+```
+
+```{r, MetaboSPAN analysis}
+start <- Sys.time()
+metabolite_distances <- measure_metabolite_distance(metabolites## ,
+                                                    ## biospecimen = "Adipose"
+)
+print(Sys.time() - start)
+
+visualize_metabolite_distances(metabolite_distances)
+
+proximal_metabolites <- extract_proximal_metabolites(
+  metabolites,
+  metabolite_distances,
+  ## biospecimen = "Adipose",
+  absolute_cutoff = metabs_of_interest_cutoff
+)
+
+start <- Sys.time()
+visualize_metabolite_network(metabolites,
+  proximal_metabolites,
+  ## biospecimen = "Adipose",
+  label = TRUE
+  )
+print(Sys.time() - start)
+
+metabolite_panel <- c(background_ids, proximal_metabolites)
+metabolite_panel <- metabolite_panel[which(!is.na(metabolite_panel))]
+
+metabolite_distances_bg <- measure_metabolite_distance(
+  metabolite_panel## ,
+  ## biospecimen = "Adipose"
+)
+
+proximal_metabolites_bg <- extract_proximal_metabolites(
+  metabolite_panel,
+  metabolite_distances_bg,
+  ## biospecimen = "Adipose"
+  absolute_cutoff = metabs_of_interest_cutoff
+)
+
+
+expanded_metabolites_of_interest <- c(
+  metabolites,
+  as.vector(proximal_metabolites)
+)
+
+
+expanded_background <- c(
+  metabolite_panel,
+  proximal_metabolites_bg
+)
+
+
+pathways_FDR <- runCombinedFisherTest(expanded_metabolites_of_interest,
+  expanded_background,
+  MCall = F
+  )
+
+filtered.fisher.results <- FilterFishersResults(pathways_FDR, p_fdradj_cutoff = 0.1)
+
+plot1<-pathwayResultsPlot(filtered.fisher.results, text_size = 14, perc_analyte_overlap = 0.2, 
+    min_pathway_tocluster = 2, perc_pathway_overlap = 0.2)
+
+```
+
+```{r, Standard analysis}
+pathwaydf_default<-
+    getPathwayFromAnalyte(
+        analytes =
+            c(metabolites),
+        NameOrIds="ids",
+        conpass=conpass_bw,socket=socket_bw, dbname=dbname_bw)
+
+backgrounddf_default <-getPathwayFromAnalyte(
+    analytes =
+        c(as.vector(background_ids)),
+    NameOrIds="ids",
+        conpass=conpass_bw,socket=socket_bw, dbname=dbname_bw)
+
+pathways_FDR_default<-
+    runCombinedFisherTest(metabolites,
+                          background_ids)
+
+filtered.fisher.results <- FilterFishersResults(pathways_FDR_default, p_fdradj_cutoff = 0.1)
+
+plot2<-pathwayResultsPlot(filtered.fisher.results, text_size = 14, perc_analyte_overlap = 0.2, 
+    min_pathway_tocluster = 2, perc_pathway_overlap = 0.2)
+```
+# Pathway Results
+## Pathways Summary table
+```{r,echo = FALSE}
+
+jaccard<-function(x,y){
+return(length(
+    intersect(x,
+              y))/
+    min(length(x),
+        length(y)))
+}
+
+sig_MS_05<-pathways_FDR$fishresults%>%dplyr::filter(Pval<0.05)%>%dplyr::select(pathwayRampId)
+sig_05<-pathways_FDR_default$fishresults%>%dplyr::filter(Pval<0.05)%>%dplyr::select(pathwayRampId)
+
+
+stat=c("Number of significant metabolites",
+       "Number of panel metabolites",
+       "Similarity cutoff for significant list addition",
+       "Similarity cutoff for background list addition",
+       "Number of metabolites added to significant list",
+       "Number of metabolites added to panel list",
+       "Number of MetaboSPAN pathways with FDR pval < 0.05",
+       "Number of conventional (unexpanded) pathways with FDR pval < 0.05",
+       "Number of MetaboSPAN pathways with nominal pval < 0.05",
+       "Number of conventional (unexpanded) pathways with nominal pval < 0.05",
+       "Jaccard overlap of pathways < 0.05 between methods",
+       "Time it took to generate this report (minutes)"
+       )
+
+value=c(length(metabolites),
+        length(background_ids),        
+        metabs_of_interest_cutoff,
+        background_cutoff,
+        length(proximal_metabolites),
+        length(proximal_metabolites_bg),        
+        pathways_FDR$fishresults%>%dplyr::filter(Pval_FDR<0.05)%>%nrow(),
+        pathways_FDR_default$fishresults%>%dplyr::filter(Pval_FDR<0.05)%>%nrow(),
+        pathways_FDR$fishresults%>%dplyr::filter(Pval<0.05)%>%nrow(),
+        pathways_FDR_default$fishresults%>%dplyr::filter(Pval<0.05)%>%nrow(),
+        jaccard(sig_MS_05,sig_05),
+        difftime(Sys.time(),start_time,units="mins")
+        )
+summary_table<-data.frame(stat,value)
+
+knitr::kable(summary_table,digits=2)
+
+```
+
+## Significant MetaboSPAN pathways (p < 0.05)
+```{r}
+pathways_FDR$fishresults%>%dplyr::filter(Pval<0.05)%>%
+    dplyr::select(pathwayName, Pval_FDR, Pval) %>%
+    dplyr::arrange(pathwayName) %>%
+    knitr::kable()
+```
+
+## Significant default pathways (p < 0.05)
+```{r}
+pathways_FDR_default$fishresults%>%dplyr::filter(Pval<0.05) %>%
+    dplyr::select(pathwayName, Pval_FDR, Pval) %>%
+    dplyr::arrange(pathwayName) %>%
+    knitr::kable()
+```
+
+## Metabolites added to set of interest
+```{r}
+if(length(proximal_metabolites)!=0){
+    knitr::kable(metabospan:::source_to_common(proximal_metabolites,
+                                              conpass=conpass_bw,
+                                              socket=socket_bw, dbname=dbname_bw))
+}
+
+```
+
+## Metabolites added to background
+```{r}
+if(length(proximal_metabolites_bg)!=0){
+    knitr::kable(metabospan:::source_to_common(proximal_metabolites_bg,
+                                              conpass=conpass_bw,
+                                              socket=socket_bw, dbname=dbname_bw))
+}
+```
+
+
+
+# Chemical 
