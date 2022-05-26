@@ -135,33 +135,9 @@ adjacency_matrix.to_csv("/Users/pattac/Documents/metabospan/data-raw/kegg_networ
 ```{r}
 adjacency_matrix <- read.csv("kegg_overlap.csv",row.names=1)
 
-library(RaMP)
-library(tidyverse)
+colnames(adjacency_matrix) <- paste0("kegg:", colnames(adjacency_matrix))
+rownames(adjacency_matrix) <- paste0("kegg:", rownames(adjacency_matrix))
 
-pkg.globals <- setConnectionToRaMP(
-  dbname = "ramp", username = "root", conpass = "",
-  host = "localhost")
-
-con <- connectToRaMP()
-query <- "select * from source"
-
-source_table <- DBI::dbGetQuery(con, query) %>%
-    filter(IDtype=="kegg") %>%
-    select(sourceId,rampId) %>%
-    mutate(sourceId = gsub("kegg:","",sourceId))
-DBI::dbDisconnect(con)
-
-indices = data.frame(sourceId = colnames(adjacency_matrix))
-indices = indices %>%
-    left_join(source_table,by="sourceId")
-
-for(i in 1:ncol(adjacency_matrix)){
-    colnames(adjacency_matrix)[i] = indices %>%
-        filter(sourceId==colnames(adjacency_matrix)[i]) %>%
-        pull(rampId)
-}
-
-rownames(adjacency_matrix) = colnames(adjacency_matrix)
-
+saveRDS(adjacency_matrix,"../pathway_similarity/KEGG_pathway_overlap_matrix.Rds")
 
 ```

@@ -2,10 +2,8 @@ library(Matrix)
 library(tidyverse)
 library(RaMP)
 
-pkg.globals <- setConnectionToRaMP(dbname="ramp2",username="root",conpass="mysql123",
-                                   host = "localhost",socket = paste0("/lscratch/",
-                       Sys.getenv("SLURM_JOB_ID"),
-                       "/mysql/mysql.sock"))
+pkg.globals <- setConnectionToRaMP(dbname="ramp",conpass="",username="root",
+                                   host = "localhost")
 
 ########################
 ## Pathways
@@ -50,7 +48,7 @@ Liver_pathway_similarity_matrix<-convert_to_similarity_matrix("pathway_similarit
 Kidney_pathway_similarity_matrix<-convert_to_similarity_matrix("pathway_similarity/Kidney_pathway_overlap_matrix.Rds")
 Saliva_pathway_similarity_matrix<-convert_to_similarity_matrix("pathway_similarity/Saliva_pathway_overlap_matrix.Rds")
 Feces_pathway_similarity_matrix<-convert_to_similarity_matrix("pathway_similarity/Feces_pathway_overlap_matrix.Rds")
-KEGG_pathway_similarity_matrix<-convert_to_similarity_matrix("pathway_similarity/KEGG_pathway_overlap_matrix.Rds")
+KEGG_pathway_similarity_matrix<-readRDS("pathway_similarity/KEGG_pathway_overlap_matrix.Rds")
 
 ########################
 ## Structures
