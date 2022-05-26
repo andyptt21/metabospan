@@ -1,0 +1,167 @@
+---
+title: Creating KEGG network for MetaboSPAN validation
+author: "Andrew Patt"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+fig-height: 5
+fig-width: 10
+execute:
+  message: false
+  warning: false
+page-layout: full
+format:
+  html
+---
+
+# Parse compound information from KEGG
+
+```{python}
+## Create dictionary
+import json
+import numpy as np
+import pandas as pd
+import pdb
+from matplotlib import pyplot as plt
+
+with open("/Users/pattac/Desktop/KEGG/compound/compound") as file:
+    file_contents = file.read()
+
+with open("/Users/pattac/Desktop/KEGG/parsed_hsa_only_map_numbers.txt") as file:
+    human_pathway_numbers = file.read()
+
+human_pathway_numbers = human_pathway_numbers.split("\n")
+human_pathway_ids = []
+for i in human_pathway_numbers:
+    human_pathway_ids.append("map"+i)
+
+file_split = file_contents.split("///")
+
+def splitter():
+    my_dict = {}
+    for i in file_split:
+        lines = i.split("\n")
+        str1 = "ENTRY"
+        compound = [i for i in lines if str1 in i]
+        if isinstance(compound, list):
+            if len(compound) == 1:
+                compound_name = compound[0].split()[1]
+                str2 = "map"
+                pathways = [i for i in lines if str2 in i]
+                pathways_split_list = list()
+                for temp in pathways:
+                    pathways_split = temp.split()
+                    pathways_split = [temp for temp in pathways_split if str2 in temp]
+                    if (pathways_split[0] in human_pathway_ids):
+                        pathways_split_list.append(pathways_split)
+                my_dict[compound_name] = pathways_split_list
+            else:
+                continue
+        else:
+            print(compound)
+            break
+                
+    return my_dict
+
+kegg_pathways = splitter()
+kegg_pathways = {k: v for k, v in kegg_pathways.items() if v}
+```
+
+# Make GMX file for custom pathway definitions
+```{python}
+compound_list = list(kegg_pathways.items())   
+pathway_list = []
+
+gmx_dict = {}
+
+for i in compound_list:
+    compound_iter = i[0]
+    pathways_iter = [''.join(ele) for ele in i[1]]
+    for j in pathways_iter:
+        if j not in gmx_dict:
+            gmx_dict[j] = []
+        gmx_dict[j].append("kegg:"+compound_iter)
+
+gmx_df = pd.DataFrame(gmx_dict.items(),columns = ["Pathways", "Metabolites"])
+
+pathway_lengths = {}
+for index, row in gmx_df.iterrows():
+    pathway_lengths[len(row["Metabolites"])] = row["Pathways"]
+
+large_pathways = []
+for (key,value) in pathway_lengths.items():
+    if key > 200:
+        large_pathways.append(value)
+
+gmx_df = gmx_df[~gmx_df['Pathways'].isin(large_pathways)]
+gmx_df_split = pd.DataFrame(gmx_df["Metabolites"].tolist())
+gmx_df = pd.concat([gmx_df,gmx_df_split],axis=1)
+gmx_df = gmx_df.drop("Metabolites",axis=1).transpose()
+
+gmx_df.to_csv("kegg_pathways.gmx", sep="\t",header=False, index=False)
+
+```
+
+# Build adjacency matrix
+```{python}
+def getList(dict):
+    return dict.keys()
+
+def jaccard(list1, list2):
+    intersection = len(list(set(list1).intersection(list2)))
+    union = (len(list1) + len(list2)) - intersection
+    return float(intersection) / union
+
+compounds = getList(kegg_pathways)
+
+adjacency_matrix = np.array([0]*len(compounds)**2).reshape(len(compounds),len(compounds))
+adjacency_matrix = pd.DataFrame(adjacency_matrix,index = compounds, columns = compounds)
+
+for i in list(compounds):
+    for k in list(compounds):
+        cpd1 = [''.join(ele) for ele in kegg_pathways[i]]
+        cpd1 = list(filter(lambda pathway: pathway not in large_pathways, cpd1))
+        cpd2 = [''.join(ele) for ele in kegg_pathways[k]]
+        cpd2 = list(filter(lambda pathway: pathway not in large_pathways, cpd2))
+        try:
+            overlap = jaccard(tuple(cpd1),tuple(cpd2))
+        except:
+            continue
+        adjacency_matrix.loc[i,k] = overlap
+
+adjacency_matrix.to_csv("/Users/pattac/Documents/metabospan/data-raw/kegg_network/kegg_overlap.csv")
+```
+
+# Convert row and column names to RaMP IDs and save as Rds
+
+```{r}
+adjacency_matrix <- read.csv("kegg_overlap.csv",row.names=1)
+
+library(RaMP)
+library(tidyverse)
+
+pkg.globals <- setConnectionToRaMP(
+  dbname = "ramp", username = "root", conpass = "",
+  host = "localhost")
+
+con <- connectToRaMP()
+query <- "select * from source"
+
+source_table <- DBI::dbGetQuery(con, query) %>%
+    filter(IDtype=="kegg") %>%
+    select(sourceId,rampId) %>%
+    mutate(sourceId = gsub("kegg:","",sourceId))
+DBI::dbDisconnect(con)
+
+indices = data.frame(sourceId = colnames(adjacency_matrix))
+indices = indices %>%
+    left_join(source_table,by="sourceId")
+
+for(i in 1:ncol(adjacency_matrix)){
+    colnames(adjacency_matrix)[i] = indices %>%
+        filter(sourceId==colnames(adjacency_matrix)[i]) %>%
+        pull(rampId)
+}
+
+rownames(adjacency_matrix) = colnames(adjacency_matrix)
+
+
+```
